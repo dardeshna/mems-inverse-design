@@ -79,6 +79,20 @@ class Model():
 
         return U.reshape(-1,3)[idx], F.reshape(-1,3)[idx]
 
+    def solve_modes(self, num_modes):
+
+        K_reduced = self.K[:self.num_free*3, :self.num_free*3]
+        M_reduced = self.M[:self.num_free*3, :self.num_free*3]
+
+        w_sq, U_reduced = scipy.sparse.linalg.eigsh(K_reduced, num_modes, M_reduced, which='LM', sigma=1)
+
+        idx = np.array(list(self.imap.keys()))
+
+        Us = [np.append(x, np.zeros(3 * self.num_fixed)) .reshape(-1,3)[idx] for x in U_reduced.T]
+        f = np.lib.scimath.sqrt(w_sq) / (2*np.pi)
+
+        return Us, f, w_sq
+
 # m = Model(np.zeros(10), np.zeros(10), np.zeros(10), np.zeros(10), E=2, rho=1)
 # print(m.rho)
 
@@ -92,6 +106,7 @@ fixed =  np.genfromtxt('models/beam20p/fixed.txt', delimiter=",", dtype=int)-1
 loaded =  np.genfromtxt('models/beam20p/loaded.txt', delimiter=",", dtype=int)-1
 U_ref =  np.genfromtxt('models/beam20p/ref_disp.txt', delimiter="")[:, 1:]
 F_ref =  np.genfromtxt('models/beam20p/ref_force.txt', delimiter="")[:, 1:]
+mode_ref =  np.genfromtxt('models/beam20p/ref_mode.txt', delimiter="")[:, 1:]
 
 model = Model(nodes, elems, fixed, E=210000, nu=0.3, rho=7.8E-9)
 K = model.calc_stiffness()[:model.num_free*3, :model.num_free*3]
@@ -111,24 +126,12 @@ M_ref = M_ref.T + M_ref - np.diag(np.diag(M_ref))
 
 print(np.max(np.abs(M-M_ref)))
 
-# w, v = np.linalg.eig(M.toarray())
-# print(w[-10:])
-
-start = time.time()
-w, v = scipy.linalg.eigh(K.toarray(), M.toarray())
-print("eigh: ", time.time()-start)
-
-# print(np.sort(np.abs(w))[:10])
-print(np.sort(np.sqrt(w) / (2*np.pi))[:10])
-
-start = time.time()
-w, v = scipy.sparse.linalg.eigsh(K, 10, M, which='LM', sigma=1)
-print("eigsh: ", time.time()-start)
-
-# print(np.sort(np.abs(w))[:10])
-print(np.sort(np.sqrt(w) / (2*np.pi)))
-
 U, F = model.solve_displacement(loaded, np.full(loaded.shape, 1), np.ones(loaded.shape))
 
 print(np.max(np.abs(U-U_ref)))
 print(np.max(np.abs(F-F_ref)))
+
+Us, f, w_sq = model.solve_modes(10)
+
+print(f)
+print(np.max(np.abs(Us[1]-mode_ref)))
