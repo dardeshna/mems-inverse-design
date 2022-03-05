@@ -153,3 +153,7 @@ cython_debug/
 
 temp/
 *.FCStd*
+*.12d
+*.cvg
+*.sta
+spooles.out
