@@ -3,7 +3,7 @@ import scipy
 import scipy.sparse
 import scipy.sparse.linalg
 import time
-from models.accel.gen_accel_mesh import AccelMeshGenerator
+from models.accel.gen_accel_mesh import AccelBlankMeshGenerator
 
 from c3d20 import elem_K, elem_M
 
@@ -42,9 +42,15 @@ class Model():
         row = []
         col = []
         data = []
+
+        elem_mats = []
+        elem_mat_len = len(self.elements[0])*len(self.elements[0])*3*3
+
         for e_i, e in enumerate(self.elements):
+
             n_coords = self.nodes[e]
             mat_elem = elem_mat(n_coords, *[i[e_i] for i in args])
+
             for i, n_i in enumerate(e):
                 for j, n_j in enumerate(e):
                     for k in range(3):
@@ -52,15 +58,17 @@ class Model():
                             row.append(self.idx(n_i, k))
                             col.append(self.idx(n_j, l))
                             data.append(mat_elem[3*i+k,3*j+l])
+            
+            elem_mats.append(scipy.sparse.coo_matrix((data[-elem_mat_len:], (row[-elem_mat_len:], col[-elem_mat_len:])), shape=(3*self.num_nodes, 3*self.num_nodes)).asformat("csr"))
 
-        return scipy.sparse.coo_matrix((data, (row, col)), shape=(3*self.num_nodes, 3*self.num_nodes)).asformat("csr")
+        return scipy.sparse.coo_matrix((data, (row, col)), shape=(3*self.num_nodes, 3*self.num_nodes)).asformat("csr"), elem_mats
 
     def calc_stiffness(self):
-        self.K = self.build_mat(elem_K, self.E, self.nu)
+        self.K, self.K_els = self.build_mat(elem_K, self.E, self.nu)
         return self.K
 
     def calc_mass(self):
-        self.M = self.build_mat(elem_M, self.rho)
+        self.M, self.M_els = self.build_mat(elem_M, self.rho)
         return self.M
 
     def solve_displacement(self, nodes, dofs, loads):
@@ -89,55 +97,57 @@ class Model():
 
         idx = np.array(list(self.imap.keys()))
 
-        Us = [np.append(x, np.zeros(3 * self.num_fixed)) .reshape(-1,3)[idx] for x in U_reduced.T]
+        Us = [np.append(x, np.zeros(3 * self.num_fixed)).reshape(-1,3)[idx] for x in U_reduced.T]
         f = np.lib.scimath.sqrt(w_sq) / (2*np.pi)
 
         return Us, f, w_sq
 
-g = AccelMeshGenerator(5200, 2400, 320, 69, 400)
-nodes = np.c_[g.x, g.y, g.z]
-elems = g.elems
-fixed = g.fixed
+if __name__ == "__main__":
 
-# m = Model(np.zeros(10), np.zeros(10), np.zeros(10), np.zeros(10), E=2, rho=1)
-# print(m.rho)
+    g = AccelBlankMeshGenerator(5200, 2400, 320, 69, 400)
+    nodes = np.c_[g.x, g.y, g.z]
+    elems = g.elems
+    fixed = g.fixed
 
-# nodes = np.genfromtxt('models/single_elem/nodes.txt', delimiter=",")[:, 1:]
-# elems = [np.arange(20),]
-# fixed = []
+    # m = Model(np.zeros(10), np.zeros(10), np.zeros(10), np.zeros(10), E=2, rho=1)
+    # print(m.rho)
 
-# nodes = np.genfromtxt('models/accel/nodes.txt', delimiter=",")[:, 1:]
-# elems =  np.genfromtxt('models/accel/elems.txt', delimiter=",", dtype=int)[:, 1:]-1
-# fixed =  np.genfromtxt('models/accel/fixed.txt', delimiter=",", dtype=int)-1
-# loaded =  np.genfromtxt('models/beam20p/loaded.txt', delimiter=",", dtype=int)-1
-# U_ref =  np.genfromtxt('models/beam20p/ref_disp.txt', delimiter="")[:, 1:]
-# F_ref =  np.genfromtxt('models/beam20p/ref_force.txt', delimiter="")[:, 1:]
-# mode_ref =  np.genfromtxt('models/beam20p/ref_mode.txt', delimiter="")[:, 1:]
+    # nodes = np.genfromtxt('models/single_elem/nodes.txt', delimiter=",")[:, 1:]
+    # elems = [np.arange(20),]
+    # fixed = []
 
-model = Model(nodes, elems, fixed, E=170000, nu=0.280, rho=2.329e-09)#E=210000, nu=0.3, rho=7.8E-9)
-K = model.calc_stiffness()[:model.num_free*3, :model.num_free*3]
-M = model.calc_mass()[:model.num_free*3, :model.num_free*3]
+    # nodes = np.genfromtxt('models/accel/nodes.txt', delimiter=",")[:, 1:]
+    # elems =  np.genfromtxt('models/accel/elems.txt', delimiter=",", dtype=int)[:, 1:]-1
+    # fixed =  np.genfromtxt('models/accel/fixed.txt', delimiter=",", dtype=int)-1
+    # loaded =  np.genfromtxt('models/beam20p/loaded.txt', delimiter=",", dtype=int)-1
+    # U_ref =  np.genfromtxt('models/beam20p/ref_disp.txt', delimiter="")[:, 1:]
+    # F_ref =  np.genfromtxt('models/beam20p/ref_force.txt', delimiter="")[:, 1:]
+    # mode_ref =  np.genfromtxt('models/beam20p/ref_mode.txt', delimiter="")[:, 1:]
 
-# K_ref = np.genfromtxt('single_elem/single_elem.sti')
-# K_ref = np.genfromtxt('models/beam20p/get_stiffness/beam20p.sti')
-# K_ref = scipy.sparse.coo_matrix((K_ref[:,2], (K_ref[:,0]-1, K_ref[:,1]-1)), shape=(3*model.num_free, 3*model.num_free)).toarray()
-# K_ref = K_ref.T + K_ref - np.diag(np.diag(K_ref))
+    model = Model(nodes, elems, fixed, E=170000, nu=0.280, rho=2.329e-09)#E=210000, nu=0.3, rho=7.8E-9)
+    K = model.calc_stiffness()[:model.num_free*3, :model.num_free*3]
+    M = model.calc_mass()[:model.num_free*3, :model.num_free*3]
 
-# print(np.max(np.abs(K-K_ref)))
+    # K_ref = np.genfromtxt('single_elem/single_elem.sti')
+    # K_ref = np.genfromtxt('models/beam20p/get_stiffness/beam20p.sti')
+    # K_ref = scipy.sparse.coo_matrix((K_ref[:,2], (K_ref[:,0]-1, K_ref[:,1]-1)), shape=(3*model.num_free, 3*model.num_free)).toarray()
+    # K_ref = K_ref.T + K_ref - np.diag(np.diag(K_ref))
 
-# M_ref = np.genfromtxt('single_elem/single_elem.mas')
-# M_ref = np.genfromtxt('models/beam20p/get_stiffness/beam20p.mas')
-# M_ref = scipy.sparse.coo_matrix((M_ref[:,2], (M_ref[:,0]-1, M_ref[:,1]-1)), shape=(3*model.num_free, 3*model.num_free)).toarray()
-# M_ref = M_ref.T + M_ref - np.diag(np.diag(M_ref))
+    # print(np.max(np.abs(K-K_ref)))
 
-# print(np.max(np.abs(M-M_ref)))
+    # M_ref = np.genfromtxt('single_elem/single_elem.mas')
+    # M_ref = np.genfromtxt('models/beam20p/get_stiffness/beam20p.mas')
+    # M_ref = scipy.sparse.coo_matrix((M_ref[:,2], (M_ref[:,0]-1, M_ref[:,1]-1)), shape=(3*model.num_free, 3*model.num_free)).toarray()
+    # M_ref = M_ref.T + M_ref - np.diag(np.diag(M_ref))
 
-# U, F = model.solve_displacement(loaded, np.full(loaded.shape, 1), np.ones(loaded.shape))
+    # print(np.max(np.abs(M-M_ref)))
 
-# print(np.max(np.abs(U-U_ref)))
-# print(np.max(np.abs(F-F_ref)))
+    # U, F = model.solve_displacement(loaded, np.full(loaded.shape, 1), np.ones(loaded.shape))
 
-Us, f, w_sq = model.solve_modes(10)
+    # print(np.max(np.abs(U-U_ref)))
+    # print(np.max(np.abs(F-F_ref)))
 
-print(f)
-# print(np.max(np.abs(Us[1]-mode_ref)))
+    Us, f, w_sq = model.solve_modes(10)
+
+    print(f)
+    # print(np.max(np.abs(Us[1]-mode_ref)))

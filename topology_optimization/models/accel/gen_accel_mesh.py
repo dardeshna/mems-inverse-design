@@ -1,6 +1,9 @@
 import numpy as np
+import os
 
-class AccelMeshGenerator():
+base_dir = os.path.dirname(os.path.abspath(__file__))
+
+class AccelBlankMeshGenerator():
 
     def __init__(self, total_length, proof_mass_length, proof_mass_thickness, suspension_thickness, element_length):
 
@@ -11,6 +14,48 @@ class AccelMeshGenerator():
         self.d = element_length
 
         self.generate()
+
+    @property
+    def centers(self):
+
+        return np.c_[self.cent_x, self.cent_y, self.cent_z]
+
+    @property
+    def nodes(self):
+
+        return np.c_[self.x, self.y, self.z]
+
+    def remove_elems(self, elems_to_remove):
+
+        old_nodes = np.max(self.elems)+1
+
+        idx_keep = np.ones(self.elems.shape[0], dtype=bool)
+        idx_keep[elems_to_remove] = False
+
+        idx_domain = np.zeros(self.elems.shape[0], dtype=bool)
+        idx_domain[self.domain] = True
+
+        self.domain = np.where((idx_domain & idx_keep)[idx_keep])[0]
+        
+        self.cent_x = self.cent_x[idx_keep]
+        self.cent_y = self.cent_y[idx_keep]
+        self.cent_z = self.cent_z[idx_keep]       
+
+        self.elems = self.elems[idx_keep]
+
+        used_nodes = np.unique(self.elems)
+        num_used = used_nodes.shape[0]
+
+        self.x = self.x[used_nodes]
+        self.y = self.y[used_nodes]
+        self.z = self.z[used_nodes]
+
+        self.indices = np.arange(num_used)
+        new_idx = np.zeros(old_nodes, dtype=int)
+        new_idx[used_nodes] = self.indices
+
+        self.elems = new_idx[self.elems]
+        self.fixed = new_idx[np.intersect1d(self.fixed, used_nodes)]
 
     def generate(self):
 
@@ -72,14 +117,19 @@ class AccelMeshGenerator():
         new_idx[used_nodes] = indices
 
         elems = new_idx[elems.reshape(-1, 20)]
+        cent = cent.flatten()
 
         cent_x = np.mod(cent, n_xy) * self.d/2
         cent_y = np.mod(cent // n_xy, n_xy) * self.d/2
+        cent_z = heights[2 * (np.arange(elems.shape[0]) % layers) + 1]
 
-        in_mass = ((cent_x > (self.L-self.l)/2) & (cent_x < (self.L-self.l)/2+self.l) & (cent_y > (self.L-self.l)/2) & (cent_y < (self.L-self.l)/2+self.l)).flatten()
+        in_mass = ((cent_x > (self.L-self.l)/2) & (cent_x < (self.L-self.l)/2+self.l) & (cent_y > (self.L-self.l)/2) & (cent_y < (self.L-self.l)/2+self.l))
         in_middle = z[elems[:,-1]] == self.T/2
+        in_model = in_middle | in_mass
 
-        elems = elems[in_middle | in_mass.flatten()]
+        self.domain = np.where((in_middle & ~in_mass)[in_model])[0]
+        elems = elems[in_model]
+
         used_nodes = np.unique(elems)
         num_used = used_nodes.shape[0]
         x, y, z = x[used_nodes], y[used_nodes], z[used_nodes]
@@ -94,14 +144,34 @@ class AccelMeshGenerator():
 
         scale = 1e-3
         self.x,self.y,self.z = scale*x, scale*y, scale*z
+        self.cent_x,self.cent_y,self.cent_z = scale*cent_x[in_model], scale*cent_y[in_model], scale*cent_z[in_model]
 
-    def dump_txt(self):
-        np.savetxt('elems.txt', np.c_[np.arange(self.elems.shape[0])+1, self.elems+1], fmt="%i", delimiter=", ")
-        np.savetxt('nodes.txt', np.c_[self.indices+1, self.x, self.y, self.z], fmt="%i, %e, %e, %e")
-        np.savetxt('fixed.txt', self.fixed[None,...]+1, fmt="%i", delimiter=", ")
+    def dump_txt(self, filename="accel_blank"):
 
-    def dump_inp(self, E, nu, rho):
-        with open('accel_blank_quad.inp', 'w') as f:
+        dir = os.path.dirname(os.path.join(base_dir, f'{filename}.txt'))
+        if not os.path.exists(dir):
+            os.makedirs(dir)
+        
+        np.savetxt(
+            os.path.join(base_dir, f'{filename}{"_" if filename else ""}elems.txt'),
+            np.c_[np.arange(self.elems.shape[0])+1, self.elems+1], fmt="%i", delimiter=", ",
+        )
+        np.savetxt(
+            os.path.join(base_dir, f'{filename}{"_" if filename else ""}nodes.txt'),
+            np.c_[self.indices+1, self.x, self.y, self.z], fmt="%i, %e, %e, %e",
+        )
+        np.savetxt(
+            os.path.join(base_dir, f'{filename}{"_" if filename else ""}fixed.txt'),
+            self.fixed[None,...]+1, fmt="%i", delimiter=", "
+        )
+
+    def dump_inp(self, E, nu, rho, filename="accel_blank"):
+
+        dir = os.path.dirname(os.path.join(base_dir, f'{filename}.txt'))
+        if not os.path.exists(dir):
+            os.makedirs(dir)
+        
+        with open(os.path.join(base_dir, f'{filename}.inp'), 'w') as f:
             f.write("*NODE, NSET=Nall\n")
 
             np.savetxt(f, np.c_[self.indices+1, self.x, self.y, self.z], fmt="%i, %e, %e, %e")
@@ -156,6 +226,6 @@ S, E
             f.close()
 
 if __name__ == "__main__":
-    g = AccelMeshGenerator(5200, 2400, 320, 69, 400)
+    g = AccelBlankMeshGenerator(5200, 2400, 320, 69, 400)
     g.dump_inp(E=170000, nu=0.280, rho=2.329e-09)
     g.dump_txt()
