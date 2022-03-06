@@ -27,7 +27,7 @@ nodes_norm = np.array(nodes_norm)
 for i in range(nodes_norm.shape[-1]):
     nodes_norm[:,i] = (nodes_norm[:,i] - nodes_norm[:,i].min()) / (nodes_norm[:,i].max() - nodes_norm[:,i].min()) * 2 -1
 
-print(np.array(nodes_norm))
+print(repr(np.array(nodes_norm)))
 
 print("[", end="")
 for i in nodes_norm:

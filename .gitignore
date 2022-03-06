@@ -153,6 +153,7 @@ cython_debug/
 
 temp/
 *.FCStd*
+*.step
 *.12d
 *.cvg
 *.sta
