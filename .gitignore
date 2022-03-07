@@ -157,4 +157,5 @@ temp/
 *.12d
 *.cvg
 *.sta
+*.frd
 spooles.out
